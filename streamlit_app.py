@@ -30,7 +30,7 @@ def get_cooccurrence(df, ingredients):
                 pairs[pair] = pairs.get(pair, 0) + 1
     return pairs
 
-# Enhanced network graph
+# Enhanced network graph (fixed width issue)
 def plot_network(selected_ingredients, cooccurrence):
     G = nx.Graph()
     for ing in selected_ingredients:
@@ -41,13 +41,20 @@ def plot_network(selected_ingredients, cooccurrence):
     
     pos = nx.spring_layout(G, k=0.5, iterations=50)  # Improved layout
     edge_x, edge_y = [], []
-    for edge in G.edges(data=True):
+    for edge in G.edges():
         x0, y0 = pos[edge[0]]
         x1, y1 = pos[edge[1]]
         edge_x.extend([x0, x1, None])
         edge_y.extend([y0, y1, None])
     
-    edge_trace = go.Scatter(x=edge_x, y=edge_y, mode="lines", line=dict(width=[d["weight"]/100 for _, _, d in G.edges(data=True)], color="#888"))
+    # Calculate average weight for a single width value
+    if G.edges():
+        avg_weight = sum(d["weight"] for _, _, d in G.edges(data=True)) / len(G.edges())
+        edge_width = max(1, min(5, avg_weight / 100))  # Clamp between 1 and 5
+    else:
+        edge_width = 1
+    
+    edge_trace = go.Scatter(x=edge_x, y=edge_y, mode="lines", line=dict(width=edge_width, color="#888"))
     node_x, node_y = zip(*pos.values())
     node_trace = go.Scatter(x=node_x, y=node_y, mode="markers+text", text=list(G.nodes()), 
                             marker=dict(size=[d["size"] for _, d in G.nodes(data=True)], color="#1f77b4", 
@@ -55,8 +62,8 @@ def plot_network(selected_ingredients, cooccurrence):
                             textposition="top center", hoverinfo="text", textfont=dict(size=12))
     fig = go.Figure(data=[edge_trace, node_trace], 
                     layout=go.Layout(title="Ingredient Compatibility Network", showlegend=False, 
-                                     plot_bgcolor="#2c2f33", paper_bgcolor="#2c2f33", 
-                                     font=dict(color="#ffffff"), margin=dict(b=40, l=40, r=40, t=40)))
+                                     plot_bgcolor="#ffffff", paper_bgcolor="#ffffff", 
+                                     font=dict(color="#000000"), margin=dict(b=40, l=40, r=40, t=40)))
     return fig
 
 # Complementary ingredients bar chart
@@ -70,8 +77,8 @@ def plot_complementary_ingredients(df, selected_ingredients):
     fig = go.Figure([go.Bar(x=ingredients, y=counts, marker_color="#f39c12", 
                             text=counts, textposition="auto")])
     fig.update_layout(title="Top Complementary Ingredients", xaxis_title="Ingredient", 
-                      yaxis_title="Frequency", plot_bgcolor="#2c2f33", paper_bgcolor="#2c2f33", 
-                      font=dict(color="#ffffff"), xaxis_tickangle=-45)
+                      yaxis_title="Frequency", plot_bgcolor="#ffffff", paper_bgcolor="#ffffff", 
+                      font=dict(color="#000000"), xaxis_tickangle=-45)
     return fig
 
 # Adventurous pairing
@@ -92,52 +99,9 @@ def get_adventurous_pairing(df, selected_ingredients):
                   if ing not in selected_ingredients and freq[ing] < 50 and sim > 0.1]
     return max(candidates, key=lambda x: x[1])[0] if candidates else None
 
-# Custom CSS
-def apply_css():
-    st.markdown("""
-    <style>
-    .stApp {
-        background-color: #2c2f33;
-        color: #ffffff;
-        font-family: 'Arial', sans-serif;
-    }
-    .stTitle {
-        color: #e74c3c;
-        font-size: 36px;
-        font-weight: bold;
-    }
-    .stSubheader {
-        color: #ecf0f1;
-        font-size: 20px;
-    }
-    .sidebar .sidebar-content {
-        background-color: #34495e;
-        padding: 10px;
-        border-radius: 5px;
-    }
-    .stButton>button {
-        background-color: #e74c3c;
-        color: white;
-        border-radius: 5px;
-        padding: 5px 15px;
-    }
-    .stMultiSelect [data-baseweb="select"] > div {
-        background-color: #34495e;
-        color: #ffffff;
-    }
-    .stDataFrame {
-        background-color: #34495e;
-        border: 1px solid #bdc3c7;
-        border-radius: 5px;
-        padding: 5px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
 # Main app
 def main():
     st.set_page_config(page_title="Recipe Compatibility Explorer", layout="wide")
-    apply_css()
 
     st.sidebar.title("Controls")
     df = load_data()
@@ -221,9 +185,9 @@ def main():
         - **Scikit-learn**: Cosine similarity for adventurous pairings.
 
         #### Data Source
-        The app uses the [What’s Cooking dataset](https://www.kaggle.com/kaggle/recipe-ingredients-dataset) from Kaggle.
+        The app uses the [What’s Cooking dataset](https://www.kaggle.com/competitions/whats-cooking/overview) from Kaggle.
 
-        Built by [Your Name] as a portfolio project to showcase data analysis, visualization, and app development skills.
+        Built by Zain Haidar as a portfolio project to showcase data analysis, visualization, and app development skills.
         """)
 
 if __name__ == "__main__":
