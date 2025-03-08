@@ -4,6 +4,8 @@ import networkx as nx
 import plotly.graph_objects as go
 import json
 from collections import Counter
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Load and preprocess data
 @st.cache_data
@@ -12,10 +14,9 @@ def load_data():
         train_data = json.load(f)
     with open("data/test.json", "r") as f:
         test_data = json.load(f)
-    # Combine train and test, adding cuisine where missing in test
     train_df = pd.DataFrame(train_data)
     test_df = pd.DataFrame(test_data)
-    test_df["cuisine"] = "Unknown"  # Placeholder for test data
+    test_df["cuisine"] = "Unknown"
     df = pd.concat([train_df, test_df], ignore_index=True)
     return df
 
@@ -29,31 +30,33 @@ def get_cooccurrence(df, ingredients):
                 pairs[pair] = pairs.get(pair, 0) + 1
     return pairs
 
-# Network graph
+# Enhanced network graph
 def plot_network(selected_ingredients, cooccurrence):
     G = nx.Graph()
     for ing in selected_ingredients:
-        G.add_node(ing)
+        G.add_node(ing, size=20)  # Base size
     for (ing1, ing2), weight in cooccurrence.items():
         if ing1 in selected_ingredients and ing2 in selected_ingredients:
             G.add_edge(ing1, ing2, weight=weight)
     
-    pos = nx.spring_layout(G)
+    pos = nx.spring_layout(G, k=0.5, iterations=50)  # Improved layout
     edge_x, edge_y = [], []
-    for edge in G.edges():
+    for edge in G.edges(data=True):
         x0, y0 = pos[edge[0]]
         x1, y1 = pos[edge[1]]
         edge_x.extend([x0, x1, None])
         edge_y.extend([y0, y1, None])
     
-    edge_trace = go.Scatter(x=edge_x, y=edge_y, mode="lines", line=dict(width=2, color="#888"))
+    edge_trace = go.Scatter(x=edge_x, y=edge_y, mode="lines", line=dict(width=[d["weight"]/100 for _, _, d in G.edges(data=True)], color="#888"))
     node_x, node_y = zip(*pos.values())
     node_trace = go.Scatter(x=node_x, y=node_y, mode="markers+text", text=list(G.nodes()), 
-                            marker=dict(size=25, color="#1f77b4", line=dict(width=2, color="#fff")), 
-                            textposition="top center", hoverinfo="text")
+                            marker=dict(size=[d["size"] for _, d in G.nodes(data=True)], color="#1f77b4", 
+                                        line=dict(width=2, color="#fff")), 
+                            textposition="top center", hoverinfo="text", textfont=dict(size=12))
     fig = go.Figure(data=[edge_trace, node_trace], 
-                    layout=go.Layout(showlegend=False, plot_bgcolor="rgba(0,0,0,0)", 
-                                     margin=dict(b=0, l=0, r=0, t=0)))
+                    layout=go.Layout(title="Ingredient Compatibility Network", showlegend=False, 
+                                     plot_bgcolor="#2c2f33", paper_bgcolor="#2c2f33", 
+                                     font=dict(color="#ffffff"), margin=dict(b=40, l=40, r=40, t=40)))
     return fig
 
 # Complementary ingredients bar chart
@@ -64,27 +67,95 @@ def plot_complementary_ingredients(df, selected_ingredients):
             all_related.extend([ing for ing in recipe if ing not in selected_ingredients])
     top_complements = Counter(all_related).most_common(5)
     ingredients, counts = zip(*top_complements)
-    fig = go.Figure([go.Bar(x=ingredients, y=counts, marker_color="#ff7f0e")])
-    fig.update_layout(title="Top Complementary Ingredients", xaxis_title="Ingredient", yaxis_title="Frequency")
+    fig = go.Figure([go.Bar(x=ingredients, y=counts, marker_color="#f39c12", 
+                            text=counts, textposition="auto")])
+    fig.update_layout(title="Top Complementary Ingredients", xaxis_title="Ingredient", 
+                      yaxis_title="Frequency", plot_bgcolor="#2c2f33", paper_bgcolor="#2c2f33", 
+                      font=dict(color="#ffffff"), xaxis_tickangle=-45)
     return fig
+
+# Adventurous pairing
+def get_adventurous_pairing(df, selected_ingredients):
+    vectorizer = CountVectorizer(tokenizer=lambda x: x, lowercase=False)
+    ingredient_matrix = vectorizer.fit_transform(df["ingredients"]).toarray()
+    ingredient_names = vectorizer.get_feature_names_out()
+    
+    selected_indices = [i for i, ing in enumerate(ingredient_names) if ing in selected_ingredients]
+    if not selected_indices:
+        return None
+    
+    selected_vector = ingredient_matrix[:, selected_indices].mean(axis=1).reshape(1, -1)
+    similarities = cosine_similarity(selected_vector, ingredient_matrix.T)[0]
+    
+    freq = Counter([ing for sublist in df["ingredients"] for ing in sublist])
+    candidates = [(ing, sim) for ing, sim in zip(ingredient_names, similarities) 
+                  if ing not in selected_ingredients and freq[ing] < 50 and sim > 0.1]
+    return max(candidates, key=lambda x: x[1])[0] if candidates else None
+
+# Custom CSS
+def apply_css():
+    st.markdown("""
+    <style>
+    .stApp {
+        background-color: #2c2f33;
+        color: #ffffff;
+        font-family: 'Arial', sans-serif;
+    }
+    .stTitle {
+        color: #e74c3c;
+        font-size: 36px;
+        font-weight: bold;
+    }
+    .stSubheader {
+        color: #ecf0f1;
+        font-size: 20px;
+    }
+    .sidebar .sidebar-content {
+        background-color: #34495e;
+        padding: 10px;
+        border-radius: 5px;
+    }
+    .stButton>button {
+        background-color: #e74c3c;
+        color: white;
+        border-radius: 5px;
+        padding: 5px 15px;
+    }
+    .stMultiSelect [data-baseweb="select"] > div {
+        background-color: #34495e;
+        color: #ffffff;
+    }
+    .stDataFrame {
+        background-color: #34495e;
+        border: 1px solid #bdc3c7;
+        border-radius: 5px;
+        padding: 5px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # Main app
 def main():
-    # Set page config for wide layout and title
     st.set_page_config(page_title="Recipe Compatibility Explorer", layout="wide")
+    apply_css()
 
-    # Sidebar
     st.sidebar.title("Controls")
     df = load_data()
     all_ingredients = sorted(set([ing for sublist in df["ingredients"] for ing in sublist]))
-    selected_ingredients = st.sidebar.multiselect("Select Ingredients", all_ingredients, 
+    
+    search_query = st.sidebar.text_input("Search Ingredients", "", help="Type to filter ingredients")
+    if search_query:
+        filtered_ingredients = [ing for ing in all_ingredients if search_query.lower() in ing.lower()]
+    else:
+        filtered_ingredients = all_ingredients
+    
+    selected_ingredients = st.sidebar.multiselect("Select Ingredients", filtered_ingredients, 
                                                   default=["chicken", "garlic", "olive oil"],
                                                   help="Choose 2+ ingredients for best results.")
     cuisine_options = ["All"] + sorted(df["cuisine"].unique())
     cuisine = st.sidebar.selectbox("Filter by Cuisine", cuisine_options, 
                                    help="Filter recipes by cuisine type.")
     
-    # Tabs for Main Content and About
     tab1, tab2 = st.tabs(["Explorer", "About"])
 
     with tab1:
@@ -92,39 +163,41 @@ def main():
             st.warning("Please select at least one ingredient to begin!")
             return
 
-        # Filter data by cuisine
         filtered_df = df if cuisine == "All" else df[df["cuisine"] == cuisine]
 
-        # Title and layout
         st.title("Recipe Ingredient Compatibility Explorer")
         st.markdown("Discover how your ingredients pair and find recipe inspiration!")
 
-        # Two-column layout
         col1, col2 = st.columns(2)
 
         with col1:
-            # Network Graph
             st.subheader("Ingredient Compatibility Network")
             cooccurrence = get_cooccurrence(filtered_df, selected_ingredients)
             if len(selected_ingredients) >= 2:
-                fig_network = plot_network(selected_ingredients, cooccurrence)
+                with st.spinner("Rendering network..."):
+                    fig_network = plot_network(selected_ingredients, cooccurrence)
                 st.plotly_chart(fig_network, use_container_width=True)
             else:
                 st.info("Select 2 or more ingredients to see the network!")
 
         with col2:
-            # Complementary Ingredients
             st.subheader("Top Complementary Ingredients")
-            fig_complements = plot_complementary_ingredients(filtered_df, selected_ingredients)
+            with st.spinner("Analyzing complements..."):
+                fig_complements = plot_complementary_ingredients(filtered_df, selected_ingredients)
             st.plotly_chart(fig_complements, use_container_width=True)
 
-        # Recipe Suggestions
+        st.subheader("Adventurous Pairing Suggestion")
+        with st.spinner("Finding a unique pairing..."):
+            adventurous = get_adventurous_pairing(filtered_df, selected_ingredients)
+        if adventurous:
+            st.success(f"Try something new: **{adventurous}** pairs surprisingly well with your selection!")
+        else:
+            st.write("No adventurous pairing found. Try different ingredients!")
+
         st.subheader("Recipe Suggestions")
         recipes = filtered_df[filtered_df["ingredients"].apply(lambda x: all(ing in x for ing in selected_ingredients))]
         if not recipes.empty:
-            st.dataframe(recipes[["id", "cuisine", "ingredients"]].head(5).style.set_properties(**{
-                "background-color": "#f9f9f9", "border-color": "#ddd", "padding": "5px"
-            }), use_container_width=True)
+            st.dataframe(recipes[["id", "cuisine", "ingredients"]].head(5), use_container_width=True)
         else:
             st.write("No exact matches found. Try different ingredients or cuisine!")
 
@@ -138,17 +211,17 @@ def main():
         #### Features
         - **Interactive Network**: See how your ingredients pair using a dynamic graph.
         - **Complementary Insights**: Discover the most common ingredients that pair with your choices.
-        - **Recipe Finder**: Get recipes matching your ingredients, filtered by cuisine.
+        - **Adventurous Pairing**: Get a rare but viable ingredient suggestion using cosine similarity.
+        - **Recipe Finder**: Find recipes matching your ingredients, filtered by cuisine.
 
         #### Tech Stack
         - **Streamlit**: For the interactive UI.
         - **Pandas**: Data manipulation.
         - **NetworkX & Plotly**: Graph visualization.
-        - **Python**: Core logic and analysis.
+        - **Scikit-learn**: Cosine similarity for adventurous pairings.
 
         #### Data Source
-        The app uses the [What’s Cooking dataset](https://www.kaggle.com/kaggle/recipe-ingredients-dataset) from Kaggle, 
-        combining both `train.json` and `test.json` for a richer analysis.
+        The app uses the [What’s Cooking dataset](https://www.kaggle.com/kaggle/recipe-ingredients-dataset) from Kaggle.
 
         Built by [Your Name] as a portfolio project to showcase data analysis, visualization, and app development skills.
         """)
