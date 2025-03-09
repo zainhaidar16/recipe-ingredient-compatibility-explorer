@@ -110,8 +110,8 @@ def main():
     st.set_page_config(page_title="Recipe Compatibility Explorer", layout="wide")
 
     # Header
-    # Commented out online image due to potential loading issues; use local image if available
-    # st.image("logo.png", width=100, caption="Your Logo")  # Uncomment and replace with your local image path
+    # Commented out online image; use local image if available
+    # st.image("logo.png", width=100, caption="Zain The Analyst Logo")  # Uncomment and replace with your local image path
     st.title("Recipe Ingredient Compatibility Explorer")
     st.markdown("Discover how your ingredients pair and find recipe inspiration!")
 
@@ -204,19 +204,19 @@ def main():
         - **Scikit-learn**: Cosine similarity for adventurous pairings.
 
         #### Data Source
-        [What’s Cooking dataset](https://www.kaggle.com/kaggle/recipe-ingredients-dataset) from Kaggle.
+        [What’s Cooking dataset](https://www.kaggle.com/competitions/whats-cooking/overview) from Kaggle.
 
         #### Project Details
         - **Version**: 1.0
         - **Last Updated**: March 08, 2025
-        - **Built by**: [Your Name]
-        - **GitHub**: [Insert GitHub Link]
-        - **Contact**: [Your Email]
+        - **Built by**: Zain The Analyst
+        - **GitHub**: https://github.com/zainhaidar16
+        - **Contact**: contact@zaintheanalyst.com
         """)
 
     # Footer
     st.markdown("---")
-    st.markdown("© 2025 Zain The Analyst | Contact: contact@zaintheanalyst.com ", unsafe_allow_html=False)
+    st.markdown("© 2025 Zain The Analyst | Contact: contact@zaintheanalyst.com | https://github.com/zainhaidar16", unsafe_allow_html=False)
 
 if __name__ == "__main__":
     if "random_idx" not in st.session_state:
