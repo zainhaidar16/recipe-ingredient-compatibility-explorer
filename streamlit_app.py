@@ -8,7 +8,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import base64
 
-# Load and preprocess data (convert lists to strings for caching)
+# Load and preprocess data
 @st.cache_data
 def load_data():
     with open("data/train.json", "r") as f:
@@ -17,9 +17,6 @@ def load_data():
         test_data = json.load(f)
     train_df = pd.DataFrame(train_data)
     test_df = pd.DataFrame(test_data)
-    # Convert ingredients list to string for hashing
-    train_df["ingredients"] = train_df["ingredients"].apply(lambda x: " ".join(x))
-    test_df["ingredients"] = test_df["ingredients"].apply(lambda x: " ".join(x))
     test_df["cuisine"] = "Unknown"
     df = pd.concat([train_df, test_df], ignore_index=True)
     return df
@@ -28,14 +25,14 @@ def load_data():
 @st.cache_data
 def precompute_cooccurrence(df):
     pairs = {}
-    for recipe in df["ingredients"].str.split():
+    for recipe in df["ingredients"]:
         for i in range(len(recipe)):
             for j in range(i + 1, len(recipe)):
                 pair = tuple(sorted([recipe[i], recipe[j]]))
                 pairs[pair] = pairs.get(pair, 0) + 1
     return pairs
 
-# Enhanced network graph with dark background and fixed width
+# Enhanced network graph with dark background
 def plot_network(selected_ingredients, cooccurrence):
     G = nx.Graph()
     for ing in selected_ingredients:
@@ -52,12 +49,11 @@ def plot_network(selected_ingredients, cooccurrence):
         edge_x.extend([x0, x1, None])
         edge_y.extend([y0, y1, None])
     
-    # Use a single average width for the trace
     avg_weight = sum(d["weight"] for _, _, d in G.edges(data=True)) / len(G.edges()) if G.edges() else 1
     edge_width = max(1, min(5, avg_weight / 100))
     
     edge_trace = go.Scatter(x=edge_x, y=edge_y, mode="lines", line=dict(width=edge_width, color="#888"),
-                            hoverinfo="text", hovertext=[f"Weight: {d['weight']}" for _, _, d in G.edges(data=True) if G.edges()])
+                            hoverinfo="text", hovertext=[f"Weight: {d['weight']}" for _, _, d in G.edges(data=True)])
     node_x, node_y = zip(*pos.values())
     node_trace = go.Scatter(x=node_x, y=node_y, mode="markers+text", text=list(G.nodes()),
                             marker=dict(size=[d["size"] for _, d in G.nodes(data=True)], color="#1f77b4",
@@ -72,7 +68,7 @@ def plot_network(selected_ingredients, cooccurrence):
 # Complementary ingredients bar chart with dark background
 def plot_complementary_ingredients(df, selected_ingredients):
     all_related = []
-    for recipe in df["ingredients"].str.split():
+    for recipe in df["ingredients"]:
         if any(ing in recipe for ing in selected_ingredients):
             all_related.extend([ing for ing in recipe if ing not in selected_ingredients])
     top_complements = Counter(all_related).most_common(5)
@@ -86,8 +82,8 @@ def plot_complementary_ingredients(df, selected_ingredients):
 
 # Adventurous pairing
 def get_adventurous_pairing(df, selected_ingredients):
-    vectorizer = CountVectorizer(tokenizer=lambda x: x.split(), lowercase=False)
-    ingredient_matrix = vectorizer.fit_transform(df["ingredients"])
+    vectorizer = CountVectorizer(tokenizer=lambda x: x, lowercase=False)
+    ingredient_matrix = vectorizer.fit_transform(df["ingredients"]).toarray()
     ingredient_names = vectorizer.get_feature_names_out()
     
     selected_indices = [i for i, ing in enumerate(ingredient_names) if ing in selected_ingredients]
@@ -97,7 +93,7 @@ def get_adventurous_pairing(df, selected_ingredients):
     selected_vector = ingredient_matrix[:, selected_indices].mean(axis=1).reshape(1, -1)
     similarities = cosine_similarity(selected_vector, ingredient_matrix.T)[0]
     
-    freq = Counter([ing for sublist in df["ingredients"].str.split() for ing in sublist])
+    freq = Counter([ing for sublist in df["ingredients"] for ing in sublist])
     candidates = [(ing, sim) for ing, sim in zip(ingredient_names, similarities)
                   if ing not in selected_ingredients and freq[ing] < 50 and sim > 0.1]
     return max(candidates, key=lambda x: x[1])[0] if candidates else None
@@ -114,15 +110,15 @@ def main():
     st.set_page_config(page_title="Recipe Compatibility Explorer", layout="wide")
 
     # Header
-    # Commented out image; uncomment and replace with local logo.png if available
-    # st.image("logo.png", width=100, caption="Zain The Analyst Logo")
+    # Commented out online image; use local image if available
+    # st.image("logo.png", width=100, caption="Zain The Analyst Logo")  # Uncomment and replace with your local image path
     st.title("Recipe Ingredient Compatibility Explorer")
     st.markdown("Discover how your ingredients pair and find recipe inspiration!")
 
     # Sidebar
     st.sidebar.title("Controls")
     df = load_data()
-    all_ingredients = sorted(set([ing for sublist in df["ingredients"].str.split() for ing in sublist]))
+    all_ingredients = sorted(set([ing for sublist in df["ingredients"] for ing in sublist]))
     cooccurrence = precompute_cooccurrence(df)
 
     search_query = st.sidebar.text_input("Search Ingredients", "", help="Type to filter ingredients (e.g., 'onion')")
@@ -175,7 +171,7 @@ def main():
                 st.write("No adventurous pairing found. Try different ingredients!")
 
             st.subheader("Recipe Suggestions")
-            recipes = filtered_df[filtered_df["ingredients"].str.split().apply(lambda x: all(ing in x for ing in selected_ingredients)) if not filtered_df.empty else pd.Series()]
+            recipes = filtered_df[filtered_df["ingredients"].apply(lambda x: all(ing in x for ing in selected_ingredients))]
             if not recipes.empty:
                 st.dataframe(recipes[["id", "cuisine", "ingredients"]].head(5), use_container_width=True)
                 st.markdown(download_csv(recipes[["id", "cuisine", "ingredients"]].head(5)), unsafe_allow_html=True)
